@@ -1,0 +1,142 @@
+
+var mysql = require('mysql');
+    const constants = require('../helper/constants.js');
+    const db = constants[process.env.NODE_ENV].mysqlServer;
+    const host = constants[process.env.NODE_ENV].hostMaster;
+    const user = constants[process.env.NODE_ENV].user;
+    const password = constants[process.env.NODE_ENV].password;
+
+    var mysqlConnectOpts = {
+        connectionLimit: 2000000, //increase limit for multiple connections
+        waitForConnections: true,
+        queueLimit: 150000, // resource dedication for particular query
+        acquireTimeout: 172800000, // pending query time out
+        connectTimeout: 172800000, // each connection life cycle time
+        host: host,
+        user: user,
+        password: password,
+        database: db,
+        dateStrings: 'date',
+        multipleStatements: false,
+        rejectUnauthorized: true
+    }
+    var pool = mysql.createPool(mysqlConnectOpts);
+
+
+
+    module.exports.pool = pool;
+
+    
+
+
+var express = require('express'),
+    mysql = require('mysql');
+    const constants = require('../helper/constants.js');
+    const db = constants[process.env.NODE_ENV].mysqlServer;
+    const host = constants[process.env.NODE_ENV].hostSlave;
+    const user = constants[process.env.NODE_ENV].user;
+    const password = constants[process.env.NODE_ENV].password;
+   
+
+    var mysqlConnectOpts = {
+        connectionLimit: 2000000, //increase limit for multiple connections
+        waitForConnections: true,
+        queueLimit: 150000, // resource dedication for particular query
+        acquireTimeout: 172800000, // pending query time out
+        connectTimeout: 172800000, // each connection life cycle time
+        host: host,
+        user: user,
+        password: password,
+        database: db,
+        dateStrings: 'date',
+        multipleStatements: false,
+        rejectUnauthorized: true
+    }
+
+    var pool = mysql.createPool(mysqlConnectOpts);
+
+
+
+    module.exports.pool = pool;
+
+
+const db = require('../database/db_config_mysql.js').localConnect();
+const dbslavepool = require('../database/db_config_mysql_slave_new.js').pool;
+const dbmasterpool = require('../database/db_config_mysql_master_new.js').pool;
+
+
+const updateUserNameWholeData = (req, res, next) => {
+    if(checkMultiple ==0){
+        checkMultiple =1;
+
+    var sqlNameDuplicate = 'select * from (select user_name ,name, count(1) as cnt from tbl_user_master  where user_name is not null group by user_name having cnt >1 ) as a group by a.name';
+
+    db.query(sqlNameDuplicate, function (err, rows, fields) {
+
+        async.eachSeries(rows, function (vl, cb) {
+           
+            let like_name = vl.name.split(' ').join('.');
+            
+            var getAllUsers = 'select user_id ,name,user_name from tbl_user_master where user_name like  ' + mysql.escape(like_name + '%') + ' and name = ' + mysql.escape(vl.name) + ' ';
+           
+           
+        //    db.query(getAllUsers, function (err, rowsname, fields) {
+
+                dbslavepool.getConnection(function(err, connection) {
+                    if (err) {
+                        connection.release();
+                        res.json({ "code": 100, "status": "Error in connection database" });
+                        return;
+                    }
+                
+                    connection.query(getAllUsers, function(err, rowsname, fields) {
+                        connection.release();
+                
+                let CurrentCount = 0;
+                async.eachSeries(rowsname, function (vlname, cbname) {
+                    
+                    let updatedName = like_name;
+
+                    if(CurrentCount != 0)
+                        updatedName = like_name+'.'+CurrentCount;
+
+                    var updateSql = 'update tbl_user_master set user_name = '+mysql.escape(updatedName)+' where user_id = '+vlname.user_id+'';    
+                 //   dbmaster.query(updateSql, function (err, rowsname) {
+                    dbmasterpool.getConnection(function(err, connectionmaster) {
+                        if (err) {
+                            connectionmaster.release();
+                            res.json({ "code": 100, "status": "Error in connection database" });
+                            return;
+                        }
+                    
+                        connectionmaster.query(updateSql, function(err, rowsname, fields) {
+                            connectionmaster.release();
+                        console.log(err);
+                        console.log(updateSql);
+                        CurrentCount++;    
+                        cbname();
+                    });
+
+                });
+                    
+
+                },function(){
+
+                    cb();
+                });
+            });
+
+        });
+            
+            
+        },function(){
+
+        });
+
+
+
+    });
+}else{
+    console.log('OHMYGOOOOODDDDD');
+}
+};
